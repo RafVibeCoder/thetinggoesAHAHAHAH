@@ -2,96 +2,48 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>The Boiled One – Level 3 Realism Engine</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
+  <title>The Boiled One – Level 3 Realism</title>
   <style>
-    html, body {
+    body {
       margin: 0;
-      padding: 0;
       overflow: hidden;
-      background: #000;
-      font-family: system-ui, sans-serif;
-      color: #fff;
+      background: black;
+      font-family: Arial, sans-serif;
+      color: white;
     }
 
     #ui {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      pointer-events: none;
+      position: absolute;
+      top: 10px;
+      left: 10px;
       z-index: 10;
-      font-size: 14px;
-      text-shadow: 0 0 4px #000;
+      font-size: 18px;
+    }
+
+    #message {
+      position: absolute;
+      top: 50px;
+      left: 10px;
+      z-index: 10;
+      font-size: 20px;
+      color: #ff4444;
     }
 
     #prepTimer {
       position: absolute;
       top: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-
-    #soundMeter {
-      position: absolute;
-      top: 10px;
-      left: 10px;
+      right: 10px;
+      z-index: 10;
+      font-size: 18px;
     }
 
     #hideTimer {
       position: absolute;
-      top: 10px;
-      right: 10px;
-    }
-
-    #message {
-      position: absolute;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      text-align: center;
-      max-width: 80%;
-    }
-
-    #crosshair {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      width: 6px;
-      height: 6px;
-      margin-left: -3px;
-      margin-top: -3px;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.9);
-      pointer-events: none;
-      z-index: 9;
-    }
-
-    #vhsOverlay {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background:
-        repeating-linear-gradient(
-          to bottom,
-          rgba(255,255,255,0.03),
-          rgba(255,255,255,0.03) 1px,
-          transparent 2px,
-          transparent 3px
-        );
-      mix-blend-mode: screen;
-      opacity: 0.25;
-      z-index: 8;
-    }
-
-    #vignette {
-      position: fixed;
-      inset: 0;
-      pointer-events: none;
-      background: radial-gradient(circle, transparent 45%, rgba(0,0,0,0.9) 100%);
-      opacity: 0.9;
-      z-index: 7;
+      top: 80px;
+      left: 10px;
+      z-index: 10;
+      font-size: 18px;
+      color: #cccccc;
     }
 
     canvas {
@@ -101,34 +53,31 @@
 </head>
 
 <body>
+
   <div id="ui">
-    <div id="prepTimer">Boiled One arrives in: 60.0</div>
-    <div id="soundMeter">Sound: 0.00</div>
-    <div id="hideTimer"></div>
-    <div id="message">Click to lock mouse. WASD to move, Ctrl to crouch, E to hide.</div>
+    Sound: <span id="soundMeter">0.00</span>
   </div>
 
-  <div id="crosshair"></div>
-  <div id="vhsOverlay"></div>
-  <div id="vignette"></div>
+  <div id="message"></div>
+  <div id="prepTimer">Boiled One arrives in: 60.0</div>
+  <div id="hideTimer"></div>
 
   <canvas id="game"></canvas>
 
-  <!-- LEVEL 3 REALISM ENGINE MODULES -->
   <script type="module">
     import { startEngine } from "./js/engine.js";
 
-    // Boot the Level 3 Realism Engine
     startEngine({
       canvas: document.getElementById("game"),
       ui: {
-        prepTimer: document.getElementById("prepTimer"),
         soundMeter: document.getElementById("soundMeter"),
-        hideTimer: document.getElementById("hideTimer"),
-        message: document.getElementById("message")
+        prepTimer: document.getElementById("prepTimer"),
+        message: document.getElementById("message"),
+        hideTimer: document.getElementById("hideTimer")
       }
     });
   </script>
+
 </body>
 </html>
 
