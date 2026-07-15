@@ -61,8 +61,7 @@ export function startEngine(config) {
 
   // Post-processing
   const composer = new EffectComposer(renderer);
-  const renderPass = new RenderPass(scene, camera);
-  composer.addPass(renderPass);
+  composer.addPass(new RenderPass(scene, camera));
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
@@ -78,8 +77,7 @@ export function startEngine(config) {
   filmPass.uniforms["sCount"].value = 512;
   composer.addPass(filmPass);
 
-  const copyPass = new ShaderPass(CopyShader);
-  composer.addPass(copyPass);
+  composer.addPass(new ShaderPass(CopyShader));
 
   // World
   const rooms = buildRooms(scene);
