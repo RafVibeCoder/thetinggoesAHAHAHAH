@@ -2,7 +2,9 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>The Boiled One – Level 2.5</title>
+  <title>The Boiled One – Level 3 Realism Engine</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <style>
     html, body {
       margin: 0;
@@ -12,6 +14,7 @@
       font-family: system-ui, sans-serif;
       color: #fff;
     }
+
     #ui {
       position: fixed;
       top: 0;
@@ -22,22 +25,26 @@
       font-size: 14px;
       text-shadow: 0 0 4px #000;
     }
+
     #prepTimer {
       position: absolute;
       top: 10px;
       left: 50%;
       transform: translateX(-50%);
     }
+
     #soundMeter {
       position: absolute;
       top: 10px;
       left: 10px;
     }
+
     #hideTimer {
       position: absolute;
       top: 10px;
       right: 10px;
     }
+
     #message {
       position: absolute;
       bottom: 20px;
@@ -46,6 +53,7 @@
       text-align: center;
       max-width: 80%;
     }
+
     #crosshair {
       position: fixed;
       top: 50%;
@@ -59,6 +67,7 @@
       pointer-events: none;
       z-index: 9;
     }
+
     #vhsOverlay {
       position: fixed;
       inset: 0;
@@ -75,6 +84,7 @@
       opacity: 0.25;
       z-index: 8;
     }
+
     #vignette {
       position: fixed;
       inset: 0;
@@ -83,690 +93,42 @@
       opacity: 0.9;
       z-index: 7;
     }
+
     canvas {
       display: block;
     }
   </style>
 </head>
+
 <body>
-<div id="ui">
-  <div id="prepTimer">Boiled One arrives in: 60.0</div>
-  <div id="soundMeter">Sound: 0.00</div>
-  <div id="hideTimer"></div>
-  <div id="message">Click to lock mouse. WASD to move, Ctrl to crouch, E to hide.</div>
-</div>
-<div id="crosshair"></div>
-<div id="vhsOverlay"></div>
-<div id="vignette"></div>
-<canvas id="game"></canvas>
+  <div id="ui">
+    <div id="prepTimer">Boiled One arrives in: 60.0</div>
+    <div id="soundMeter">Sound: 0.00</div>
+    <div id="hideTimer"></div>
+    <div id="message">Click to lock mouse. WASD to move, Ctrl to crouch, E to hide.</div>
+  </div>
 
-<script type="module">
-import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
-import { PointerLockControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js";
-import { EffectComposer } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/EffectComposer.js";
-import { RenderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/RenderPass.js";
-import { UnrealBloomPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/UnrealBloomPass.js";
-import { ShaderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postprocessing/ShaderPass.js";
-import { FilmShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/FilmShader.js";
-import { CopyShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/CopyShader.js";
+  <div id="crosshair"></div>
+  <div id="vhsOverlay"></div>
+  <div id="vignette"></div>
 
-const canvas = document.getElementById("game");
-const prepTimerEl = document.getElementById("prepTimer");
-const soundMeterEl = document.getElementById("soundMeter");
-const hideTimerEl = document.getElementById("hideTimer");
-const messageEl = document.getElementById("message");
+  <canvas id="game"></canvas>
 
-// Renderer
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.4;
+  <!-- LEVEL 3 REALISM ENGINE MODULES -->
+  <script type="module">
+    import { startEngine } from "./js/engine.js";
 
-// Scene + camera
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x050608);
-scene.fog = new THREE.FogExp2(0x050608, 0.03);
-
-const camera = new THREE.PerspectiveCamera(
-  75,
-  window.innerWidth / window.innerHeight,
-  0.1,
-  200
-);
-// spawn in living room, not inside walls
-camera.position.set(5, 1.7, -10);
-
-const controls = new PointerLockControls(camera, document.body);
-scene.add(controls.getObject());
-
-document.body.addEventListener("click", () => controls.lock());
-controls.addEventListener("lock", () => (messageEl.textContent = ""));
-controls.addEventListener(
-  "unlock",
-  () =>
-    (messageEl.textContent =
-      "Click to lock mouse. WASD to move, Ctrl to crouch, E to hide.")
-);
-
-// Audio (realistic Boiled One‑style ambience)
-const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-
-function playFootstep(volume) {
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = "triangle";
-  osc.frequency.value = 70 + Math.random() * 30;
-  gain.gain.value = volume;
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  osc.stop(audioCtx.currentTime + 0.09);
-}
-
-function playLowRumble(volume, duration = 1.5) {
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = "sine";
-  osc.frequency.value = 40 + Math.random() * 10;
-  gain.gain.value = volume;
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
-  osc.stop(audioCtx.currentTime + duration + 0.1);
-}
-
-function playBoiledBreath(volume, duration = 1.2) {
-  const noiseBuffer = audioCtx.createBuffer(1, audioCtx.sampleRate * duration, audioCtx.sampleRate);
-  const data = noiseBuffer.getChannelData(0);
-  for (let i = 0; i < data.length; i++) {
-    data[i] = (Math.random() * 2 - 1) * 0.4;
-  }
-  const noise = audioCtx.createBufferSource();
-  noise.buffer = noiseBuffer;
-  const filter = audioCtx.createBiquadFilter();
-  filter.type = "lowpass";
-  filter.frequency.value = 800;
-  const gain = audioCtx.createGain();
-  gain.gain.value = volume;
-  noise.connect(filter);
-  filter.connect(gain);
-  gain.connect(audioCtx.destination);
-  noise.start();
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
-  noise.stop(audioCtx.currentTime + duration + 0.1);
-}
-
-function playBoiledScreech(volume) {
-  const osc = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = "sawtooth";
-  osc.frequency.value = 280 + Math.random() * 80;
-  gain.gain.value = volume;
-  osc.connect(gain);
-  gain.connect(audioCtx.destination);
-  osc.start();
-  gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.5);
-  osc.stop(audioCtx.currentTime + 0.6);
-}
-
-// Lights
-scene.add(new THREE.AmbientLight(0x202030, 0.9));
-
-function makeLight(x, y, z, color, intensity, dist) {
-  const L = new THREE.PointLight(color, intensity, dist);
-  L.position.set(x, y, z);
-  L.castShadow = true;
-  scene.add(L);
-  return L;
-}
-
-const mainLight = makeLight(0, 4, 0, 0xfff2e0, 1.8, 40);
-const accentLight = makeLight(8, 3, -6, 0xff8844, 1.2, 25);
-const kitchenLight = makeLight(-10, 3.5, 6, 0xfff8d0, 1.4, 30);
-
-// Floor
-const floor = new THREE.Mesh(
-  new THREE.PlaneGeometry(40, 40),
-  new THREE.MeshStandardMaterial({
-    color: 0x1f1a14,
-    roughness: 0.85,
-    metalness: 0.05,
-  })
-);
-floor.rotation.x = -Math.PI / 2;
-floor.receiveShadow = true;
-scene.add(floor);
-
-// Walls (open‑plan)
-const wallMat = new THREE.MeshStandardMaterial({
-  color: 0x2a2a2a,
-  roughness: 0.9,
-  metalness: 0.0,
-});
-function wall(w, h, d, x, y, z) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  scene.add(m);
-  return m;
-}
-
-// Outer shell
-wall(40, 3, 0.3, 0, 1.5, -20);
-wall(40, 3, 0.3, 0, 1.5, 20);
-wall(0.3, 3, 40, -20, 1.5, 0);
-wall(0.3, 3, 40, 20, 1.5, 0);
-
-// Interior dividers
-wall(0.3, 3, 18, -5, 1.5, -11); // hallway divider
-wall(18, 3, 0.3, 6, 1.5, -5);   // living room back
-wall(0.3, 3, 16, 12, 1.5, 4);   // bedroom wall
-wall(16, 3, 0.3, -8, 1.5, 8);   // kitchen back
-
-// Windows
-const windowMat = new THREE.MeshStandardMaterial({
-  color: 0x050509,
-  emissive: 0x222244,
-  emissiveIntensity: 0.7,
-  roughness: 0.4,
-  metalness: 0.2,
-  transparent: true,
-  opacity: 0.9,
-});
-function windowPlane(w, h, x, y, z, ry = 0) {
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), windowMat);
-  m.position.set(x, y, z);
-  m.rotation.y = ry;
-  scene.add(m);
-  return m;
-}
-windowPlane(3, 2, -10, 1.5, -19.9);
-windowPlane(3, 2, 10, 1.5, -19.9);
-windowPlane(3, 2, -10, 1.5, 19.9, Math.PI);
-windowPlane(3, 2, 10, 1.5, 19.9, Math.PI);
-
-// Props
-const propMat = new THREE.MeshStandardMaterial({
-  color: 0x333333,
-  roughness: 0.85,
-  metalness: 0.05,
-});
-function prop(geo, x, y, z) {
-  const m = new THREE.Mesh(geo, propMat);
-  m.position.set(x, y, z);
-  m.castShadow = true;
-  m.receiveShadow = true;
-  scene.add(m);
-  return m;
-}
-
-// Living room
-const couch = prop(new THREE.BoxGeometry(3, 1, 1.2), 4, 0.5, -8);
-const coffeeTable = prop(new THREE.BoxGeometry(1.8, 0.4, 1.0), 2, 0.2, -6);
-prop(new THREE.BoxGeometry(2.5, 1.2, 0.6), 8, 0.6, -4);
-
-// Kitchen
-const counter = prop(new THREE.BoxGeometry(6, 1, 1.2), -10, 0.5, 8);
-prop(new THREE.BoxGeometry(1.2, 2.4, 1.0), -14, 1.2, 6);
-prop(new THREE.BoxGeometry(2.5, 0.9, 1.5), -8, 0.45, 4);
-
-// Bedroom
-const bed = prop(new THREE.BoxGeometry(2.5, 0.6, 1.8), 12, 0.3, 6);
-const wardrobe = prop(new THREE.BoxGeometry(1.8, 2.5, 0.8), 14, 1.25, 3);
-
-// Bathroom
-const tub = prop(new THREE.BoxGeometry(2.5, 0.8, 1.2), -2, 0.4, 16);
-
-// Hiding spots
-const hidingSpots = [couch, coffeeTable, counter, bed, wardrobe, tub];
-
-// Silhouette at window
-const silhouette = new THREE.Mesh(
-  new THREE.BoxGeometry(0.7, 1.9, 0.1),
-  new THREE.MeshStandardMaterial({ color: 0x000000 })
-);
-silhouette.position.set(-10, 1.3, -19.8);
-silhouette.visible = false;
-scene.add(silhouette);
-
-// Boiled One – realistic lumpy body
-const boiled = new THREE.Group();
-scene.add(boiled);
-
-function lumpyCylinder(rt, rb, h, seg, ns, na) {
-  const geo = new THREE.CylinderGeometry(rt, rb, h, seg, 12);
-  const pos = geo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    const x = pos.getX(i),
-      y = pos.getY(i),
-      z = pos.getZ(i);
-    const n =
-      Math.sin(x * ns) * Math.cos(z * ns) * Math.sin(y * ns) * na;
-    pos.setXYZ(i, x + n, y + n * 0.5, z + n);
-  }
-  pos.needsUpdate = true;
-  geo.computeVertexNormals();
-  return geo;
-}
-
-const bodyMat = new THREE.MeshStandardMaterial({
-  color: 0x050505,
-  roughness: 0.6,
-  metalness: 0.25,
-  emissive: 0x111111,
-  emissiveIntensity: 0.9,
-});
-
-const torso = new THREE.Mesh(
-  lumpyCylinder(0.6, 0.9, 2.8, 32, 3.0, 0.14),
-  bodyMat
-);
-torso.position.y = 1.9;
-torso.castShadow = true;
-boiled.add(torso);
-
-const neck = new THREE.Mesh(
-  lumpyCylinder(0.22, 0.26, 0.5, 16, 4.0, 0.05),
-  bodyMat
-);
-neck.position.y = 3.3;
-boiled.add(neck);
-
-const headMat = new THREE.MeshStandardMaterial({
-  color: 0x080808,
-  roughness: 0.5,
-  metalness: 0.3,
-  emissive: 0x660000,
-  emissiveIntensity: 2.2,
-});
-const head = new THREE.Mesh(
-  new THREE.SphereGeometry(0.55, 32, 32),
-  headMat
-);
-head.position.y = 3.8;
-head.castShadow = true;
-boiled.add(head);
-
-const veinMat = new THREE.MeshStandardMaterial({
-  color: 0x220000,
-  roughness: 0.3,
-  metalness: 0.4,
-  emissive: 0xff3300,
-  emissiveIntensity: 1.6,
-});
-const vein1 = new THREE.Mesh(
-  new THREE.CylinderGeometry(0.06, 0.09, 1.5, 14),
-  veinMat
-);
-vein1.position.set(0.35, 2.5, 0.35);
-vein1.rotation.z = Math.PI / 4;
-boiled.add(vein1);
-
-const vein2 = vein1.clone();
-vein2.position.set(-0.35, 2.1, 0.3);
-vein2.rotation.z = -Math.PI / 3;
-boiled.add(vein2);
-
-const eyeMat = new THREE.MeshStandardMaterial({
-  color: 0xffffff,
-  roughness: 0.1,
-  metalness: 0.2,
-  emissive: 0xff6600,
-  emissiveIntensity: 4.0,
-});
-const leftEye = new THREE.Mesh(
-  new THREE.SphereGeometry(0.09, 16, 16),
-  eyeMat
-);
-leftEye.position.set(-0.18, 3.8, 0.48);
-boiled.add(leftEye);
-
-const rightEye = leftEye.clone();
-rightEye.position.set(0.18, 3.8, 0.48);
-boiled.add(rightEye);
-
-const armGeo = lumpyCylinder(0.14, 0.2, 1.9, 20, 5.0, 0.09);
-const leftArm = new THREE.Mesh(armGeo, bodyMat);
-leftArm.position.set(-0.9, 2.2, 0);
-leftArm.rotation.z = Math.PI / 4;
-leftArm.castShadow = true;
-boiled.add(leftArm);
-
-const rightArm = new THREE.Mesh(armGeo, bodyMat);
-rightArm.position.set(0.9, 2.2, 0);
-rightArm.rotation.z = -Math.PI / 3;
-rightArm.castShadow = true;
-boiled.add(rightArm);
-
-const legGeo = lumpyCylinder(0.18, 0.22, 2.1, 20, 4.0, 0.08);
-const leftLeg = new THREE.Mesh(legGeo, bodyMat);
-leftLeg.position.set(-0.4, 0.8, 0.1);
-leftLeg.castShadow = true;
-boiled.add(leftLeg);
-
-const rightLeg = new THREE.Mesh(legGeo, bodyMat);
-rightLeg.position.set(0.4, 0.8, 0.1);
-rightLeg.castShadow = true;
-boiled.add(rightLeg);
-
-// spawn him in hallway
-boiled.position.set(0, 0, -5);
-
-// AI waypoints (open‑plan routes)
-const waypoints = [
-  new THREE.Vector3(0, 0, -5),
-  new THREE.Vector3(6, 0, -8),
-  new THREE.Vector3(-10, 0, 8),
-  new THREE.Vector3(-4, 0, 14),
-  new THREE.Vector3(12, 0, 6),
-  new THREE.Vector3(0, 0, 0),
-];
-let currentWaypoint = 0;
-
-// Input
-const keys = {};
-window.addEventListener("keydown", (e) => (keys[e.code] = true));
-window.addEventListener("keyup", (e) => (keys[e.code] = false));
-
-let crouching = false;
-let velocity = new THREE.Vector3();
-const moveSpeed = 3.2;
-const crouchFactor = 0.45;
-
-// Game state
-let prepTime = 60.0;
-let lastTime = performance.now();
-let boiledActive = false;
-let hiding = false;
-let hideTime = 0;
-const maxHideTime = 10;
-
-let jumpscareActive = false;
-let jumpscareTime = 0;
-
-let nextEventTime = 8 + Math.random() * 10;
-
-function isNear(obj, radius = 1.6) {
-  const p = controls.getObject().position;
-  const d = p.distanceTo(obj.position);
-  return d < radius;
-}
-
-function startHide(target) {
-  if (hiding) return;
-  hiding = true;
-  hideTime = maxHideTime;
-  hideTimerEl.textContent = `Hide time: ${hideTime.toFixed(1)}s`;
-  const p = target.position.clone();
-  p.y = 1.2;
-  controls.getObject().position.copy(p);
-  messageEl.textContent = "Hiding... (E to get out)";
-}
-
-function stopHide() {
-  if (!hiding) return;
-  hiding = false;
-  hideTimerEl.textContent = "";
-  messageEl.textContent = "";
-}
-
-function killPlayer(reason) {
-  if (jumpscareActive) return;
-  jumpscareActive = true;
-  jumpscareTime = 0;
-  playBoiledScreech(0.5);
-  playLowRumble(0.4, 2.0);
-  playBoiledBreath(0.4, 1.5);
-  messageEl.textContent = `You were taken by the Boiled One (${reason}). Press R to restart.`;
-  boiledActive = false;
-  controls.unlock();
-}
-
-window.addEventListener("keydown", (e) => {
-  if (e.code === "KeyE") {
-    if (!hiding) {
-      for (const spot of hidingSpots) {
-        if (isNear(spot)) {
-          startHide(spot);
-          return;
-        }
+    // Boot the Level 3 Realism Engine
+    startEngine({
+      canvas: document.getElementById("game"),
+      ui: {
+        prepTimer: document.getElementById("prepTimer"),
+        soundMeter: document.getElementById("soundMeter"),
+        hideTimer: document.getElementById("hideTimer"),
+        message: document.getElementById("message")
       }
-    } else {
-      stopHide();
-    }
-  }
-  if (e.code === "KeyR") {
-    location.reload();
-  }
-});
-
-function updateBoiledVisual(delta) {
-  const t = performance.now() * 0.001;
-  const sway = Math.sin(t * 1.5) * 0.09;
-  torso.rotation.z = sway;
-  leftArm.rotation.x = Math.sin(t * 2.0) * 0.3;
-  rightArm.rotation.x = -Math.sin(t * 2.0) * 0.3;
-  leftLeg.rotation.x = Math.sin(t * 1.8) * 0.18;
-  rightLeg.rotation.x = -Math.sin(t * 1.8) * 0.18;
-
-  const playerPos = controls.getObject().position.clone();
-  const headPos = head.getWorldPosition(new THREE.Vector3());
-  const toPlayer = playerPos.clone().sub(headPos);
-  const dist = toPlayer.length();
-  if (dist < 12) {
-    toPlayer.normalize();
-    const yaw = Math.atan2(toPlayer.x, toPlayer.z);
-    head.rotation.y = yaw;
-  } else {
-    head.rotation.y *= 0.9;
-  }
-
-  const pulse = 0.5 + 0.5 * Math.sin(t * 4.0);
-  headMat.emissiveIntensity = 1.8 + pulse * 0.8;
-  veinMat.emissiveIntensity = 1.2 + pulse * 0.6;
-  bodyMat.emissiveIntensity = 0.7 + pulse * 0.3;
-}
-
-function triggerRandomEvent() {
-  const r = Math.random();
-  if (r < 0.4) {
-    playLowRumble(0.25, 1.2);
-    messageEl.textContent = "You feel the house vibrate slightly.";
-  } else if (r < 0.8) {
-    silhouette.visible = true;
-    playBoiledBreath(0.35, 1.4);
-    setTimeout(() => {
-      silhouette.visible = false;
-    }, 2200);
-    messageEl.textContent = "Something is standing at the window.";
-  } else {
-    accentLight.intensity = 3.0;
-    playLowRumble(0.3, 0.8);
-    setTimeout(() => {
-      accentLight.intensity = 1.2;
-    }, 700);
-    messageEl.textContent = "The light flickers violently.";
-  }
-}
-
-// Post‑processing
-const composer = new EffectComposer(renderer);
-const renderPass = new RenderPass(scene, camera);
-composer.addPass(renderPass);
-
-// Bloom (bright‑only via emissive + tone mapping)
-const bloomPass = new UnrealBloomPass(
-  new THREE.Vector2(window.innerWidth, window.innerHeight),
-  1.8,
-  0.9,
-  0.0
-);
-composer.addPass(bloomPass);
-
-// Film grain + scanlines
-const filmPass = new ShaderPass(FilmShader);
-filmPass.uniforms["grayscale"].value = 0;
-filmPass.uniforms["nIntensity"].value = 0.4;
-filmPass.uniforms["sIntensity"].value = 0.6;
-filmPass.uniforms["sCount"].value = 800;
-composer.addPass(filmPass);
-
-// Vignette via CopyShader (we already have CSS vignette, this keeps color)
-const vignettePass = new ShaderPass(CopyShader);
-composer.addPass(vignettePass);
-
-// Game update
-function update(delta) {
-  const obj = controls.getObject();
-  const pos = obj.position;
-
-  // Prep timer
-  if (!boiledActive) {
-    prepTime -= delta;
-    if (prepTime < 0) {
-      prepTime = 0;
-      boiledActive = true;
-      messageEl.textContent = "He is in the house.";
-      playLowRumble(0.3, 2.0);
-      playBoiledBreath(0.35, 1.8);
-    }
-    prepTimerEl.textContent = `Boiled One arrives in: ${prepTime.toFixed(1)}`;
-  } else {
-    prepTimerEl.textContent = "He is here.";
-  }
-
-  // Random events
-  nextEventTime -= delta;
-  if (nextEventTime <= 0 && boiledActive && !jumpscareActive) {
-    triggerRandomEvent();
-    nextEventTime = 8 + Math.random() * 10;
-  }
-
-  // Light subtle flicker
-  if (boiledActive) {
-    const t = performance.now() * 0.001;
-    mainLight.intensity = 1.6 + Math.sin(t * 9.0) * 0.15;
-  }
-
-  // Movement
-  if (controls.isLocked && !hiding && !jumpscareActive) {
-    let forward = 0;
-    let strafe = 0;
-    if (keys["KeyW"]) forward += 1;
-    if (keys["KeyS"]) forward -= 1;
-    if (keys["KeyA"]) strafe -= 1;
-    if (keys["KeyD"]) strafe += 1;
-
-    crouching = keys["ControlLeft"] || keys["ControlRight"];
-
-    const speed = moveSpeed * (crouching ? crouchFactor : 1.0);
-    const dir = new THREE.Vector3();
-    controls.getDirection(dir);
-    dir.y = 0;
-    dir.normalize();
-
-    const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0)).normalize();
-
-    velocity.set(0, 0, 0);
-    velocity.addScaledVector(dir, forward * speed * delta);
-    velocity.addScaledVector(right, strafe * speed * delta);
-
-    pos.add(velocity);
-
-    pos.x = THREE.MathUtils.clamp(pos.x, -19, 19);
-    pos.z = THREE.MathUtils.clamp(pos.z, -19, 19);
-
-    const movementAmount = velocity.length();
-    let soundLevel = movementAmount * (crouching ? 0.4 : 1.0);
-    soundMeterEl.textContent = `Sound: ${soundLevel.toFixed(2)}`;
-
-    if (movementAmount > 0.01) {
-      playFootstep(0.05 + soundLevel * 0.1);
-    }
-
-    // Camera bob
-    if (movementAmount > 0.01) {
-      const t = performance.now() * 0.005;
-      camera.position.y = 1.7 + Math.sin(t * 6.0) * 0.03;
-    } else {
-      camera.position.y = 1.7;
-    }
-
-    // Boiled One AI
-    if (boiledActive) {
-      const dist = boiled.position.distanceTo(pos);
-      const hearingRadius = 14;
-      const movementSound = soundLevel;
-
-      if (movementSound > 0.05 && dist < hearingRadius) {
-        const toPlayer = pos.clone().sub(boiled.position);
-        toPlayer.y = 0;
-        toPlayer.normalize();
-        boiled.position.addScaledVector(toPlayer, 2.4 * delta);
-        playBoiledBreath(0.25, 0.8);
-      } else {
-        const target = waypoints[currentWaypoint];
-        const toTarget = target.clone().sub(boiled.position);
-        if (toTarget.length() < 0.4) {
-          currentWaypoint = (currentWaypoint + 1) % waypoints.length;
-        } else {
-          toTarget.normalize();
-          boiled.position.addScaledVector(toTarget, 1.4 * delta);
-        }
-      }
-
-      const distToPlayer = boiled.position.distanceTo(pos);
-      if (distToPlayer < 1.1 && !hiding) {
-        killPlayer("caught in the open");
-      }
-    }
-  }
-
-  // Hiding timer
-  if (hiding && !jumpscareActive) {
-    hideTime -= delta;
-    hideTimerEl.textContent = `Hide time: ${hideTime.toFixed(1)}s`;
-    if (hideTime <= 0) {
-      hideTime = 0;
-      boiled.position.copy(controls.getObject().position).add(new THREE.Vector3(0, 0, 1));
-      killPlayer("stayed hidden too long");
-    }
-  }
-
-  // Boiled visuals
-  updateBoiledVisual(delta);
-
-  // Jumpscare camera effect
-  if (jumpscareActive) {
-    jumpscareTime += delta;
-    camera.fov = 75 + Math.sin(jumpscareTime * 20) * 12;
-    camera.updateProjectionMatrix();
-  }
-}
-
-// Animation loop
-function animate() {
-  const now = performance.now();
-  const delta = (now - lastTime) / 1000;
-  lastTime = now;
-
-  update(delta);
-  composer.render();
-  requestAnimationFrame(animate);
-}
-animate();
-
-window.addEventListener("resize", () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  composer.setSize(window.innerWidth, window.innerHeight);
-});
-</script>
+    });
+  </script>
 </body>
 </html>
+
