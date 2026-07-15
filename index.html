@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>The Boiled One – Level 2</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      background: #000;
+      color: #fff;
+      font-family: system-ui, sans-serif;
+    }
+    #ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      pointer-events: none;
+      font-size: 14px;
+      text-shadow: 0 0 4px #000;
+    }
+    #prepTimer {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+    }
+    #soundMeter {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+    }
+    #hideTimer {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+    }
+    #message {
+      position: absolute;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      text-align: center;
+      max-width: 80%;
+    }
+    #crosshair {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      width: 6px;
+      height: 6px;
+      margin-left: -3px;
+      margin-top: -3px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.7);
+      pointer-events: none;
+    }
+    #vhsOverlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        repeating-linear-gradient(
+          to bottom,
+          rgba(255,255,255,0.03),
+          rgba(255,255,255,0.03) 1px,
+          transparent 2px,
+          transparent 3px
+        );
+      mix-blend-mode: screen;
+      opacity: 0.35;
+    }
+    #vignette {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: radial-gradient(circle, transparent 40%, rgba(0,0,0,0.9) 100%);
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+<div id="ui">
+  <div id="prepTimer">Boiled One arrives in: 60</div>
+  <div id="soundMeter">Sound: 0</div>
+  <div id="hideTimer"></div>
+  <div id="message">Click to lock mouse. WASD to move, Ctrl to crouch, E to hide.</div>
+</div>
+<div id="crosshair"></div>
+<div id="vhsOverlay"></div>
+<div id="vignette"></div>
+<canvas id="game"></canvas>
+
+<script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.160.0/examples/js/controls/PointerLockControls.js"></script>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const prepTimerEl = document.getElementById('prepTimer');
+  const soundMeterEl = document.getElementById('soundMeter');
+  const hideTimerEl = document.getElementById('hideTimer');
+  const messageEl = document.getElementById('message');
+
+  const renderer = new THREE.WebGLRenderer({ canvas });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x020203);
+  scene.fog = new THREE.FogExp2(0x020203, 0.045);
+
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+
+  const controls = new THREE.PointerLockControls(camera, document.body);
+  scene.add(controls.getObject());
+  camera.position.set(0, 1.7, 0);
+
+  document.body.addEventListener('click', () => {
+    controls.lock();
+  });
+
+  controls.addEventListener('lock', () => {
+    messageEl.textContent = '';
+  });
+
+  controls.addEventListener('unlock', () => {
+    messageEl.textContent = 'Click to lock mouse. WASD to move, Ctrl to crouch, E to hide.';
+  });
+
+  // Audio
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  function playFootstep(volume) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.value = 80 + Math.random() * 40;
+    gain.gain.value = volume;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.08);
+  }
+  function playKnock(volume) {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = 120;
+    gain.gain.value = volume;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.05);
+  }
+  function playJumpscare() {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.value = 220;
+    gain.gain.value = 0.4;
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start();
+    osc.stop(audioCtx.currentTime + 0.4);
+  }
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0x202020, 0.6);
+  scene.add(ambient);
+
+  const mainLight = new THREE.PointLight(0xfff2e0, 1.6, 28);
+  mainLight.position.set(0, 3, 0);
+  mainLight.castShadow = true;
+  scene.add(mainLight);
+
+  const flickerLight = new THREE.PointLight(0xffaa88, 0.0, 18);
+  flickerLight.position.set(-4, 2.5, -4);
+  flickerLight.castShadow = true;
+  scene.add(flickerLight);
+
+  // Floor
+  const floorGeo = new THREE.PlaneGeometry(20, 20);
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0x1f1a14,
+    roughness: 0.85,
+    metalness: 0.05
+  });
+  const floor = new THREE.Mesh(floorGeo, floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Walls
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0x262626,
+    roughness: 0.9,
+    metalness: 0.0
+  });
+  function makeWall(w, h, d, x, y, z) {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mesh = new THREE.Mesh(geo, wallMat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  }
+
+  makeWall(20, 3, 0.2, 0, 1.5, -10);
+  makeWall(20, 3, 0.2, 0, 1.5, 10);
+  makeWall(0.2, 3, 20, -10, 1.5, 0);
+  makeWall(0.2, 3, 20, 10, 1.5, 0);
+
+  // Windows
+  const windowMat = new THREE.MeshStandardMaterial({
+    color: 0x050509,
+    emissive: 0x222244,
+    emissiveIntensity: 0.6,
+    roughness: 0.4,
+    metalness: 0.2
+  });
+  function makeWindow(w, h, x, y, z) {
+    const geo = new THREE.PlaneGeometry(w, h);
+    const mesh = new THREE.Mesh(geo, windowMat);
+    mesh.position.set(x, y, z);
+    scene.add(mesh);
+    return mesh;
+  }
+  const win1 = makeWindow(3, 2, -5, 1.5, -9.9);
+  const win2 = makeWindow(3, 2, 5, 1.5, -9.9);
+  const win3 = makeWindow(3, 2, -5, 1.5, 9.9);
+  const win4 = makeWindow(3, 2, 5, 1.5, 9.9);
+
+  // Props / hiding spots
+  const propMat = new THREE.MeshStandardMaterial({
+    color: 0x333333,
+    roughness: 0.85,
+    metalness: 0.05
+  });
+  function makeProp(geo, x, y, z) {
+    const mesh = new THREE.Mesh(geo, propMat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+    return mesh;
+  }
+
+  const bed = makeProp(new THREE.BoxGeometry(2, 0.5, 1.5), -4, 0.25, 3);
+  const closet = makeProp(new THREE.BoxGeometry(1.5, 2.5, 1), 4, 1.25, -3);
+  const couch = makeProp(new THREE.BoxGeometry(2.5, 1, 1), -3, 0.5, -2);
+  const table = makeProp(new THREE.BoxGeometry(1.8, 0.7, 1.2), 2, 0.35, 2);
+  const cabinet = makeProp(new THREE.BoxGeometry(1.2, 1.8, 0.8), -6, 0.9, -5);
+  const sideTable = makeProp(new THREE.BoxGeometry(1.0, 0.6, 0.8), 6, 0.3, 4);
+
+  const hidingSpots = [bed, closet, couch, table, cabinet, sideTable];
+
+  // Window silhouette
+  const silhouetteMat = new THREE.MeshStandardMaterial({
+    color: 0x000000,
+    emissive: 0x000000
+  });
+  const silhouette = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.8, 0.1), silhouetteMat);
+  silhouette.position.set(-5, 1.2, -9.8);
+  silhouette.visible = false;
+  scene.add(silhouette);
+
+  // Boiled One – Level 2
+  const boiledGroup = new THREE.Group();
+
+  function lumpyCylinder(radiusTop, radiusBottom, height, radialSegments, noiseScale, noiseAmount) {
+    const geo = new THREE.CylinderGeometry(radiusTop, radiusBottom, height, radialSegments, 8, false);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const z = pos.getZ(i);
+      const n = Math.sin(x * noiseScale) * Math.cos(z * noiseScale) * Math.sin(y * noiseScale);
+      pos.setXYZ(i, x + n * noiseAmount, y + n * noiseAmount * 0.5, z + n * noiseAmount);
+    }
+    pos.needsUpdate = true;
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: 0x050505,
+    roughness: 0.6,
+    metalness: 0.25,
+    emissive: 0x111111,
+    emissiveIntensity: 0.6
+  });
+
+  const torsoGeo = lumpyCylinder(0.55, 0.8, 2.6, 32, 3.0, 0.12);
+  const torso = new THREE.Mesh(torsoGeo, bodyMat);
+  torso.castShadow = true;
+  torso.position.y = 1.7;
+  boiledGroup.add(torso);
+
+  const neckGeo = lumpyCylinder(0.22, 0.26, 0.5, 16, 4.0, 0.05);
+  const neck = new THREE.Mesh(neckGeo, bodyMat);
+  neck.position.y = 3.1;
+  boiledGroup.add(neck);
+
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0x080808,
+    roughness: 0.5,
+    metalness: 0.3,
+    emissive: 0x330000,
+    emissiveIntensity: 0.9
+  });
+  const headGeo = new THREE.SphereGeometry(0.5, 32, 32);
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = 3.6;
+  head.castShadow = true;
+  boiledGroup.add(head);
+
+  const veinMat = new THREE.MeshStandardMaterial({
+    color: 0x220000,
+    roughness: 0.3,
+    metalness: 0.4,
+    emissive: 0xff2200,
+    emissiveIntensity: 0.4
+  });
+  const vein1 = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.08, 1.4, 12), veinMat);
+  vein1.position.set(0.3, 2.4, 0.3);
+  vein1.rotation.z = Math.PI / 4;
+  boiledGroup.add(vein1);
+
+  const vein2 = vein1.clone();
+  vein2.position.set(-0.3, 2.0, 0.25);
+  vein2.rotation.z = -Math.PI / 3;
+  boiledGroup.add(vein2);
+
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.1,
+    metalness: 0.2,
+    emissive: 0xff3300,
+    emissiveIntensity: 2.0
+  });
+  const leftEye = new THREE.Mesh(new THREE.SphereGeometry(0.08, 16, 16), eyeMat);
+  const rightEye = leftEye.clone();
+  leftEye.position.set(-0.16, 3.6, 0.42);
+  rightEye.position.set(0.16, 3.6, 0.42);
+  boiledGroup.add(leftEye);
+  boiledGroup.add(rightEye);
+
+  const armGeo = lumpyCylinder(0.14, 0.2, 1.8, 20, 5.0, 0.08);
+  const leftArm = new THREE.Mesh(armGeo, bodyMat);
+  const rightArm = new THREE.Mesh(armGeo, bodyMat);
+  leftArm.position.set(-0.8, 2.1, 0);
+  rightArm.position.set(0.8, 2.1, 0);
+  leftArm.rotation.z = Math.PI / 4;
+  rightArm.rotation.z = -Math.PI / 3;
+  leftArm.castShadow = true;
+  rightArm.castShadow = true;
+  boiledGroup.add(leftArm);
+  boiledGroup.add(rightArm);
+
+  const legGeo = lumpyCylinder(0.18, 0.22, 2.0, 20, 4.0, 0.08);
+  const leftLeg = new THREE.Mesh(legGeo, bodyMat);
+  const rightLeg = new THREE.Mesh(legGeo, bodyMat);
+  leftLeg.position.set(-0.35, 0.7, 0.1);
+  rightLeg.position.set(0.35, 0.7, 0.1);
+  leftLeg.castShadow = true;
+  rightLeg.castShadow = true;
+  boiledGroup.add(leftLeg);
+  boiledGroup.add(rightLeg);
+
+  boiledGroup.position.set(0, 0, -7);
+  scene.add(boiledGroup);
+
+  // AI waypoints
+  const waypoints = [
+    new THREE.Vector3(0, 0, -7),
+    new THREE.Vector3(-6, 0, -2),
+    new THREE.Vector3(6, 0, 2),
+    new THREE.Vector3(-4, 0, 4),
+    new THREE.Vector3(4, 0, -4),
+    new THREE.Vector3(0, 0, 6),
+  ];
+  let currentWaypoint = 0;
+
+  // Input
+  const keys = {};
+  window.addEventListener('keydown', e => { keys[e.code] = true; });
+  window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+  let crouching = false;
+  let velocity = new THREE.Vector3();
+  const moveSpeed = 3.0;
+  const crouchFactor = 0.4;
+
+  // Game state
+  let prepTime = 60;
+  let lastTime = performance.now();
+  let boiledActive = false;
+  let hiding = false;
+  let hideTime = 0;
+  const maxHideTime = 10;
+
+  let jumpscareActive = false;
+  let jumpscareTime = 0;
+
+  let nextEventTime = 8 + Math.random() * 10;
+
+  function isNear(obj, radius = 1.5) {
+    const p = controls.getObject().position;
+    const d = p.distanceTo(obj.position);
+    return d < radius;
+  }
+
+  function startHide(target) {
+    if (hiding) return;
+    hiding = true;
+    hideTime = maxHideTime;
+    hideTimerEl.textContent = `Hide time: ${hideTime.toFixed(1)}s`;
+    const p = target.position.clone();
+    p.y = 1.2;
+    controls.getObject().position.copy(p);
+    messageEl.textContent = 'Hiding... (E to get out)';
+  }
+
+  function stopHide() {
+    if (!hiding) return;
+    hiding = false;
+    hideTimerEl.textContent = '';
+    messageEl.textContent = '';
+  }
+
+  function killPlayer(reason) {
+    if (jumpscareActive) return;
+    jumpscareActive = true;
+    jumpscareTime = 0;
+    playJumpscare();
+    messageEl.textContent = `You were taken by the Boiled One (${reason}). Press R to restart.`;
+    boiledActive = false;
+    controls.unlock();
+  }
+
+  window.addEventListener('keydown', e => {
+    if (e.code === 'KeyE') {
+      if (!hiding) {
+        for (const spot of hidingSpots) {
+          if (isNear(spot)) {
+            startHide(spot);
+            return;
+          }
+        }
+      } else {
+        stopHide();
+      }
+    }
+    if (e.code === 'KeyR') {
+      location.reload();
+    }
+  });
+
+  function updateBoiledVisual(delta) {
+    const t = performance.now() * 0.001;
+    const sway = Math.sin(t * 1.5) * 0.08;
+    torso.rotation.z = sway;
+    leftArm.rotation.x = Math.sin(t * 2.0) * 0.25;
+    rightArm.rotation.x = -Math.sin(t * 2.0) * 0.25;
+    leftLeg.rotation.x = Math.sin(t * 1.8) * 0.15;
+    rightLeg.rotation.x = -Math.sin(t * 1.8) * 0.15;
+
+    const playerPos = controls.getObject().position.clone();
+    const headPos = head.getWorldPosition(new THREE.Vector3());
+    const toPlayer = playerPos.clone().sub(headPos);
+    const dist = toPlayer.length();
+    if (dist < 7) {
+      toPlayer.normalize();
+      const yaw = Math.atan2(toPlayer.x, toPlayer.z);
+      head.rotation.y = yaw;
+    } else {
+      head.rotation.y *= 0.9;
+    }
+
+    const pulse = 0.5 + 0.5 * Math.sin(t * 3.5);
+    headMat.emissiveIntensity = 0.7 + pulse * 0.5;
+    veinMat.emissiveIntensity = 0.3 + pulse * 0.4;
+  }
+
+  function triggerRandomEvent() {
+    const r = Math.random();
+    if (r < 0.4) {
+      playKnock(0.2);
+      messageEl.textContent = 'You hear a knock somewhere in the house.';
+    } else if (r < 0.8) {
+      silhouette.visible = true;
+      setTimeout(() => { silhouette.visible = false; }, 2000);
+      messageEl.textContent = 'Something is standing at the window.';
+    } else {
+      flickerLight.intensity = 2.4;
+      setTimeout(() => { flickerLight.intensity = 0.0; }, 600);
+      messageEl.textContent = 'The light flickers violently.';
+    }
+  }
+
+  function update(delta) {
+    const obj = controls.getObject();
+    const pos = obj.position;
+
+    // Prep timer
+    if (!boiledActive) {
+      prepTime -= delta;
+      if (prepTime < 0) {
+        prepTime = 0;
+        boiledActive = true;
+        messageEl.textContent = 'He is in the house.';
+      }
+      prepTimerEl.textContent = `Boiled One arrives in: ${prepTime.toFixed(1)}`;
+    } else {
+      prepTimerEl.textContent = 'He is here.';
+    }
+
+    // Random events
+    nextEventTime -= delta;
+    if (nextEventTime <= 0 && boiledActive && !jumpscareActive) {
+      triggerRandomEvent();
+      nextEventTime = 8 + Math.random() * 10;
+    }
+
+    // Light flicker subtle
+    if (boiledActive) {
+      const t = performance.now() * 0.001;
+      mainLight.intensity = 1.4 + Math.sin(t * 10.0) * 0.15;
+    }
+
+    // Movement
+    if (controls.isLocked && !hiding && !jumpscareActive) {
+      let forward = 0;
+      let strafe = 0;
+      if (keys['KeyW']) forward += 1;
+      if (keys['KeyS']) forward -= 1;
+      if (keys['KeyA']) strafe -= 1;
+      if (keys['KeyD']) strafe += 1;
+
+      crouching = keys['ControlLeft'] || keys['ControlRight'];
+
+      const speed = moveSpeed * (crouching ? crouchFactor : 1.0);
+      const dir = new THREE.Vector3();
+      controls.getDirection(dir);
+      dir.y = 0;
+      dir.normalize();
+
+      const right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0,1,0)).normalize();
+
+      velocity.set(0, 0, 0);
+      velocity.addScaledVector(dir, forward * speed * delta);
+      velocity.addScaledVector(right, strafe * speed * delta);
+
+      pos.add(velocity);
+
+      pos.x = THREE.MathUtils.clamp(pos.x, -9, 9);
+      pos.z = THREE.MathUtils.clamp(pos.z, -9, 9);
+
+      const movementAmount = velocity.length();
+      let soundLevel = movementAmount * (crouching ? 0.4 : 1.0);
+      soundMeterEl.textContent = `Sound: ${soundLevel.toFixed(2)}`;
+
+      if (movementAmount > 0.01) {
+        playFootstep(0.05 + soundLevel * 0.1);
+      }
+
+      // Camera bob
+      if (movementAmount > 0.01) {
+        const t = performance.now() * 0.005;
+        camera.position.y = 1.7 + Math.sin(t * 6.0) * 0.03;
+      } else {
+        camera.position.y = 1.7;
+      }
+
+      // Boiled One AI
+      if (boiledActive) {
+        const dist = boiledGroup.position.distanceTo(pos);
+        const hearingRadius = 9;
+        const movementSound = soundLevel;
+
+        if (movementSound > 0.05 && dist < hearingRadius) {
+          const toPlayer = pos.clone().sub(boiledGroup.position);
+          toPlayer.y = 0;
+          toPlayer.normalize();
+          boiledGroup.position.addScaledVector(toPlayer, 2.0 * delta);
+        } else {
+          const target = waypoints[currentWaypoint];
+          const toTarget = target.clone().sub(boiledGroup.position);
+          if (toTarget.length() < 0.3) {
+            currentWaypoint = (currentWaypoint + 1) % waypoints.length;
+          } else {
+            toTarget.normalize();
+            boiledGroup.position.addScaledVector(toTarget, 1.2 * delta);
+          }
+        }
+
+        const distToPlayer = boiledGroup.position.distanceTo(pos);
+        if (distToPlayer < 1.0 && !hiding) {
+          killPlayer('caught in the open');
+        }
+      }
+    }
+
+    // Hiding timer
+    if (hiding && !jumpscareActive) {
+      hideTime -= delta;
+      hideTimerEl.textContent = `Hide time: ${hideTime.toFixed(1)}s`;
+      if (hideTime <= 0) {
+        hideTime = 0;
+        boiledGroup.position.copy(controls.getObject().position).add(new THREE.Vector3(0, 0, 1));
+        killPlayer('stayed hidden too long');
+      }
+    }
+
+    // Boiled One visuals
+    updateBoiledVisual(delta);
+
+    // Jumpscare camera effect
+    if (jumpscareActive) {
+      jumpscareTime += delta;
+      camera.fov = 75 + Math.sin(jumpscareTime * 20) * 12;
+      camera.updateProjectionMatrix();
+    }
+  }
+
+  function animate() {
+    const now = performance.now();
+    const delta = (now - lastTime) / 1000;
+    lastTime = now;
+
+    update(delta);
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+  }
+  animate();
+
+  window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+})();
+</script>
+</body>
+</html>
