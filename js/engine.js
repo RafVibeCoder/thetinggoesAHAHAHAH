@@ -1,5 +1,5 @@
 // LEVEL 3 REALISM ENGINE — engine.js
-// Core engine: renderer, camera, post-processing, main loop, module loading
+// Core renderer, camera, lighting, post-processing, main loop
 
 import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
 import { PointerLockControls } from "https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js";
@@ -10,7 +10,6 @@ import { ShaderPass } from "https://unpkg.com/three@0.160.0/examples/jsm/postpro
 import { FilmShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/FilmShader.js";
 import { CopyShader } from "https://unpkg.com/three@0.160.0/examples/jsm/shaders/CopyShader.js";
 
-// ENGINE MODULES
 import { buildRooms } from "./rooms.js";
 import { buildDoors, updateDoors } from "./doors.js";
 import { initSoundSystem, updateSound } from "./sound.js";
@@ -20,173 +19,128 @@ import { updateAI } from "./ai.js";
 import { updateEvents } from "./events.js";
 import { clamp } from "./util.js";
 
-// MAIN ENGINE ENTRY POINT
 export function startEngine(config) {
   const canvas = config.canvas;
   const ui = config.ui;
 
-  // SCENE
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x050608);
-  scene.fog = new THREE.FogExp2(0x050608, 0.03);
-
-  // RENDERER
-  const renderer = new THREE.WebGLRenderer({
-    canvas,
-    antialias: true
-  });
+  // Renderer
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.setPixelRatio(window.devicePixelRatio);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.4;
 
-  // CAMERA
-  const camera = new THREE.PerspectiveCamera(
-    75,
-    window.innerWidth / window.innerHeight,
-    0.1,
-    200
-  );
-  camera.position.set(5, 1.7, -10);
+  // Scene & camera
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000000);
 
-  // CONTROLS
+  const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
+  camera.position.set(0, 1.7, 5);
+
+  // Controls
   const controls = new PointerLockControls(camera, document.body);
   scene.add(controls.getObject());
 
-  document.body.addEventListener("click", () => controls.lock());
-  controls.addEventListener("lock", () => {
-    ui.message.textContent = "";
-  });
-  controls.addEventListener("unlock", () => {
-    ui.message.textContent =
-      "Click to lock mouse. WASD to move, Ctrl to crouch, E to hide.";
+  document.body.addEventListener("click", () => {
+    controls.lock();
   });
 
-  // POST-PROCESSING
+  // Lights
+  const mainLight = new THREE.PointLight(0xffffff, 1.6, 60);
+  mainLight.position.set(0, 6, 0);
+  mainLight.castShadow = true;
+  scene.add(mainLight);
+
+  const ambient = new THREE.AmbientLight(0x404040, 0.6);
+  scene.add(ambient);
+
+  // Fog
+  scene.fog = new THREE.FogExp2(0x000000, 0.035);
+
+  // Post-processing
   const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPass(scene, camera));
+  const renderPass = new RenderPass(scene, camera);
+  composer.addPass(renderPass);
 
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    1.8,
-    0.9,
-    0.0
+    0.8,
+    0.4,
+    0.85
   );
   composer.addPass(bloomPass);
 
   const filmPass = new ShaderPass(FilmShader);
-  filmPass.uniforms["grayscale"].value = 0;
-  filmPass.uniforms["nIntensity"].value = 0.4;
-  filmPass.uniforms["sIntensity"].value = 0.6;
-  filmPass.uniforms["sCount"].value = 800;
+  filmPass.uniforms["nIntensity"].value = 0.35;
+  filmPass.uniforms["sIntensity"].value = 0.4;
+  filmPass.uniforms["sCount"].value = 512;
   composer.addPass(filmPass);
 
-  composer.addPass(new ShaderPass(CopyShader));
+  const copyPass = new ShaderPass(CopyShader);
+  composer.addPass(copyPass);
 
-  // LIGHTING
-  scene.add(new THREE.AmbientLight(0x202030, 0.9));
-
-  function makeLight(x, y, z, color, intensity, dist) {
-    const L = new THREE.PointLight(color, intensity, dist);
-    L.position.set(x, y, z);
-    L.castShadow = true;
-    scene.add(L);
-    return L;
-  }
-
-  const mainLight = makeLight(0, 4, 0, 0xfff2e0, 1.8, 40);
-
-  // MODULE INITIALIZATION
+  // World
   const rooms = buildRooms(scene);
   const doors = buildDoors(scene);
   const sound = initSoundSystem();
   const player = initPlayer(controls, ui);
   const monster = buildMonster(scene);
-  const aiState = {
+
+  // AI state
+  const ai = {
     active: false,
-    prepTime: 60,
-    nextEventTime: 8 + Math.random() * 10
+    state: "idle",
+    target: null
   };
 
-  // GAME LOOP STATE
+  // Prep timer
+  let prepTime = 60.0;
+  ui.prepTimer.textContent = `Boiled One arrives in: ${prepTime.toFixed(1)}`;
+
+  // Resize
+  window.addEventListener("resize", () => {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+    composer.setSize(w, h);
+  });
+
+  // Main loop
   let lastTime = performance.now();
-  let jumpscareActive = false;
-  let jumpscareTime = 0;
 
-  // MAIN UPDATE LOOP
-  function update(delta) {
-    // PREP TIMER
-    if (!aiState.active) {
-      aiState.prepTime -= delta;
-      if (aiState.prepTime <= 0) {
-        aiState.active = true;
-        ui.message.textContent = "He is in the house.";
-        sound.rumble(0.3, 2.0);
-        sound.breath(0.35, 1.8);
-      }
-      ui.prepTimer.textContent =
-        `Boiled One arrives in: ${aiState.prepTime.toFixed(1)}`;
-    } else {
-      ui.prepTimer.textContent = "He is here.";
-    }
-
-    // RANDOM EVENTS
-    aiState.nextEventTime -= delta;
-    if (aiState.nextEventTime <= 0 && aiState.active && !jumpscareActive) {
-      updateEvents(scene, sound, ui);
-      aiState.nextEventTime = 8 + Math.random() * 10;
-    }
-
-    // LIGHT FLICKER
-    if (aiState.active) {
-      const t = performance.now() * 0.001;
-      mainLight.intensity = 1.6 + Math.sin(t * 9.0) * 0.15;
-    }
-
-    // PLAYER UPDATE
-    updatePlayer(player, delta, ui, sound);
-
-    // DOORS UPDATE
-    updateDoors(doors, player, sound);
-
-    // AI UPDATE
-    updateAI(aiState, monster, player, sound, ui);
-
-    // MONSTER VISUAL UPDATE
-    updateMonsterVisual(monster, player);
-
-    // SOUND UPDATE
-    updateSound(player, ui);
-
-    // JUMPSCARE CAMERA EFFECT
-    if (player.jumpscare) {
-      jumpscareActive = true;
-      jumpscareTime += delta;
-      camera.fov = 75 + Math.sin(jumpscareTime * 20) * 12;
-      camera.updateProjectionMatrix();
-    }
-  }
-
-  // ANIMATION LOOP
-  function animate() {
-    const now = performance.now();
+  function loop(now) {
     const delta = (now - lastTime) / 1000;
     lastTime = now;
 
-    update(delta);
+    // Prep countdown
+    if (!ai.active) {
+      prepTime = clamp(prepTime - delta, 0, 60);
+      ui.prepTimer.textContent = `Boiled One arrives in: ${prepTime.toFixed(1)}`;
+
+      if (prepTime <= 0) {
+        ai.active = true;
+        ai.state = "investigate";
+        ui.prepTimer.textContent = "He is here.";
+      }
+    }
+
+    // Update systems
+    updatePlayer(player, delta, ui, sound);
+    updateDoors(doors, player, sound);
+    updateAI(ai, monster, player, sound, ui);
+    updateMonsterVisual(monster, player);
+    updateSound(player, ui);
+    updateEvents(scene, sound, ui);
+
+    // Render
     composer.render();
 
-    requestAnimationFrame(animate);
+    requestAnimationFrame(loop);
   }
-  animate();
 
-  // RESIZE HANDLER
-  window.addEventListener("resize", () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    composer.setSize(window.innerWidth, window.innerHeight);
-  });
+  requestAnimationFrame(loop);
 }
